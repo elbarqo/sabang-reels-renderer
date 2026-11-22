@@ -1,0 +1,49 @@
+name: Render Reels 9:16
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'ID unik album'
+        required: true
+      urls_json:
+        description: 'JSON array URL foto Google Drive'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg jq curl
+
+      - name: Download & Render Slideshow 9:16
+        env:
+          URLS_JSON: ${{ github.event.inputs.urls_json }}
+          RUN_ID: ${{ github.event.inputs.run_id }}
+        run: |
+          mkdir -p /tmp/imgs
+          i=0
+          for url in $(echo "$URLS_JSON" | jq -r '.[]'); do
+            curl -L -s "$url" -o "/tmp/imgs/img_${i}.jpg"
+            i=$((i+1))
+          done
+
+          INPUTS=""
+          FILTERS=""
+          CONCAT=""
+          for idx in $(seq 0 $((i-1))); do
+            INPUTS="$INPUTS -loop 1 -t 3 -i /tmp/imgs/img_${idx}.jpg"
+            FILTERS="${FILTERS}[${idx}:v]scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,setsar=1[v${idx}];"
+            CONCAT="${CONCAT}[v${idx}]"
+          done
+
+          ffmpeg -y $INPUTS -filter_complex "${FILTERS}${CONCAT}concat=n=${i}:v=1:a=0,format=yuv420p[outv]" -map "[outv]" -r 30 "/tmp/reels_${RUN_ID}.mp4"
+
+      - name: Publish MP4 ke GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: reels-${{ github.event.inputs.run_id }}
+          files: /tmp/reels_${{ github.event.inputs.run_id }}.mp4
