@@ -1,4 +1,4 @@
-name: Render Reels 9:16
+name: Render Reels & Kolase
 on:
   workflow_dispatch:
     inputs:
@@ -8,6 +8,10 @@ on:
       urls_json:
         description: 'JSON array URL foto Google Drive'
         required: true
+      judul:
+        description: 'Judul kegiatan untuk banner kolase'
+        required: false
+        default: 'DOKUMENTASI KEGIATAN'
 
 permissions:
   contents: write
@@ -16,8 +20,21 @@ jobs:
   render:
     runs-on: ubuntu-latest
     steps:
-      - name: Install FFmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg jq curl
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install FFmpeg & Pillow
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg jq curl fonts-dejavu-core
+          pip install pillow
+
+      - name: Generate Dynamic Collage
+        env:
+          RUN_ID: ${{ github.event.inputs.run_id }}
+          URLS_JSON: ${{ github.event.inputs.urls_json }}
+          JUDUL: ${{ github.event.inputs.judul }}
+        run: |
+          python3 make_collage.py "$RUN_ID" "$URLS_JSON" "$JUDUL"
 
       - name: Download & Render Slideshow 9:16
         env:
@@ -30,7 +47,6 @@ jobs:
             curl -L -s "$url" -o "/tmp/imgs/img_${i}.jpg"
             i=$((i+1))
           done
-
           INPUTS=""
           FILTERS=""
           CONCAT=""
@@ -39,11 +55,12 @@ jobs:
             FILTERS="${FILTERS}[${idx}:v]scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,setsar=1[v${idx}];"
             CONCAT="${CONCAT}[v${idx}]"
           done
-
           ffmpeg -y $INPUTS -filter_complex "${FILTERS}${CONCAT}concat=n=${i}:v=1:a=0,format=yuv420p[outv]" -map "[outv]" -r 30 "/tmp/reels_${RUN_ID}.mp4"
 
-      - name: Publish MP4 ke GitHub Release
+      - name: Publish MP4 & Kolase ke GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: reels-${{ github.event.inputs.run_id }}
-          files: /tmp/reels_${{ github.event.inputs.run_id }}.mp4
+          files: |
+            /tmp/reels_${{ github.event.inputs.run_id }}.mp4
+            kolase_${{ github.event.inputs.run_id }}.jpg
