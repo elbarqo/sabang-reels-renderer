@@ -1,4 +1,5 @@
 import json, os, sys, textwrap, urllib.request
+from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 run_id = sys.argv[1]
@@ -7,18 +8,20 @@ judul = sys.argv[3].strip().upper() if len(sys.argv) > 3 and sys.argv[3].strip()
 template_url = "https://drive.google.com/uc?export=download&id=10qmOVChIqW9CHSfBJXrnQX5U9v-Cb4hf"
 
 W, H = 1080, 1350
-GAP = 12              # Lebar garis pemisah antar foto (px)
+GAP = 14                    # Lebar garis pemisah antar foto (px)
 BG_COLOR = (255, 255, 255)  # Warna garis pemisah (Putih)
-TITLE_Y = 120         # Posisi Y kotak judul (geser angka ini jika menabrak logo template)
+TITLE_Y = 120               # Posisi Y kotak judul dari atas
 
 def download_img(url):
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req) as resp:
-        from io import BytesIO
-        return Image.open(BytesIO(resp.read()))
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        data = resp.read()
+        if data[:15].lower().startswith(b"<!doctype html") or b"<html" in data[:100].lower():
+            raise ValueError(f"URL bukan gambar (kemungkinan Google Drive belum publik): {url}")
+        return Image.open(BytesIO(data))
 
-# 1. Download semua foto (2-6 foto)
-photos = [download_img(u).convert("RGB") for u in urls[:6]]
+# 1. Download semua foto (2-6 foto) & perbaiki orientasi EXIF
+photos = [ImageOps.exif_transpose(download_img(u)).convert("RGB") for u in urls[:6]]
 n = len(photos)
 
 # 2. Tentukan layout grid cerdas (x, y, width, height)
@@ -53,7 +56,7 @@ elif n == 5:
         (w3 + g, h2 + g, w3, H - h2 - g),
         (2 * (w3 + g), h2 + g, W - 2 * (w3 + g), H - h2 - g),
     ]
-else:  # 6 foto (Grid 2x3)
+else:
     h3 = (H - 2 * g) // 3
     w2 = (W - g) // 2
     boxes = []
@@ -70,24 +73,20 @@ for img, (x, y, bw, bh) in zip(photos, boxes):
 
 # 4. Tempel Template Overlay PNG
 canvas = canvas.convert("RGBA")
-try:
-    overlay = download_img(template_url).convert("RGBA").resize((W, H), Image.Resampling.LANCZOS)
-    canvas = Image.alpha_composite(canvas, overlay)
-except Exception as e:
-    print("Warning overlay:", e)
+overlay = download_img(template_url).convert("RGBA").resize((W, H), Image.Resampling.LANCZOS)
+canvas = Image.alpha_composite(canvas, overlay)
 
 # 5. Gambar Banner Judul Kegiatan di Bagian Atas
 draw = ImageDraw.Draw(canvas)
 font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 font = ImageFont.truetype(font_path, 40) if os.path.exists(font_path) else ImageFont.load_default()
 
-lines = textwrap.wrap(judul, width=30)[:2]  # Maksimal 2 baris agar rapi
+lines = textwrap.wrap(judul, width=28)[:2]
 line_h = 52
 pad_y = 22
 box_h = len(lines) * line_h + pad_y * 2
 margin_x = 50
 
-# Kotak semi-transparan gelap dengan sudut melengkung
 draw.rounded_rectangle(
     [(margin_x, TITLE_Y), (W - margin_x, TITLE_Y + box_h)],
     radius=18,
