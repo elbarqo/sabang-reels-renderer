@@ -55,7 +55,7 @@ jobs:
             FILTERS="${FILTERS}[${idx}:v]scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,setsar=1[v${idx}];"
             CONCAT="${CONCAT}[v${idx}]"
           done
-          ffmpeg -y $INPUTS -filter_complex "${FILTERS}${CONCAT}concat=n=${i}:v=1:a=0,format=yuv420p[outv]" -map "[outv]" -r 30 "/tmp/reels_${RUN_ID}.mp4"
+          ffmpeg -y $INPUTS -filter_complex "${FILTERS}${CONCAT}concat=n=${i}:v=1:a=0,format=yuv420p[outv]" -map "[outv]" -c:v libx264 -movflags +faststart -r 30 "/tmp/reels_${RUN_ID}.mp4"
 
       - name: Publish MP4 & Kolase ke GitHub Release
         uses: softprops/action-gh-release@v2
